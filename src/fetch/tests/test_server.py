@@ -303,6 +303,32 @@ class TestFetchUrl:
                 )
 
     @pytest.mark.asyncio
+    async def test_fetch_connection_error_raises_error(self):
+        """Test that a connection-level failure (httpx.HTTPError) raises McpError.
+
+        This covers the `except HTTPError` path in fetch_url, where the request
+        itself fails (e.g. DNS failure, connection refused, timeout) before any
+        HTTP status code is received. Distinct from the >= 400 status-code path.
+        """
+        from httpx import ConnectError
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(
+                side_effect=ConnectError("Connection refused")
+            )
+            mock_client_class.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client_class.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            with pytest.raises(McpError) as exc_info:
+                await fetch_url(
+                    "https://unreachable.example.com/page",
+                    DEFAULT_USER_AGENT_AUTONOMOUS
+                )
+
+            assert "Failed to fetch" in str(exc_info.value)
+
+    @pytest.mark.asyncio
     async def test_fetch_with_proxy(self):
         """Test that proxy URL is passed to client."""
         mock_response = MagicMock()
